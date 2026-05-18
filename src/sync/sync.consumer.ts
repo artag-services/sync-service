@@ -89,6 +89,9 @@ export class SyncConsumer implements OnModuleInit {
         return this.messages.onReceived('instagram', payload as never)
 
       case DATA_ROUTING_KEYS.SCRAPING_TASK_COMPLETED:
+      case DATA_ROUTING_KEYS.SCRAPING_TASK_FAILED:
+        // Same projector handles both — `status` inside the payload
+        // distinguishes `completed` vs `failed`.
         return this.scraping.onCompleted(payload as never)
 
       default:
