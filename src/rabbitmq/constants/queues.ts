@@ -25,7 +25,9 @@ export const SYNC_BINDINGS = {
  * Keep this list in sync with AGENTS.md "CQRS Event Contract" table.
  */
 export const DATA_ROUTING_KEYS = {
+  IDENTITY_USER_CREATED: 'data.identity.user.created',
   IDENTITY_USER_LINKED: 'data.identity.user.linked',
+  IDENTITY_USER_DELETED: 'data.identity.user.deleted',
   WHATSAPP_MESSAGE_RECEIVED: 'data.whatsapp.message.received',
   WHATSAPP_CONVERSATION_CREATED: 'data.whatsapp.conversation.created',
   INSTAGRAM_MESSAGE_RECEIVED: 'data.instagram.message.received',

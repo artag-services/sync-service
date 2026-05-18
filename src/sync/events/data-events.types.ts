@@ -17,6 +17,26 @@ export interface IdentityUserLinkedEvent {
   linkedAt?: string // ISO
 }
 
+/**
+ * Same payload as `linked`, but only emitted the very first time a user
+ * record gets created. Consumers may treat it identically to `linked` —
+ * it's just a hint for analytics / onboarding flows.
+ */
+export interface IdentityUserCreatedEvent extends IdentityUserLinkedEvent {}
+
+/**
+ * Soft delete or post-merge tombstone.
+ * If `reason === 'merged'`, `mergedInto` carries the surviving userId.
+ */
+export interface IdentityUserDeletedEvent {
+  userId: string
+  reason: 'soft-delete' | 'merged'
+  deletedAt: string // ISO
+  mergedInto?: string
+  /** Free-text reason supplied by the caller (merge requests carry one). */
+  detail?: string
+}
+
 export interface WhatsappMessageReceivedEvent {
   messageId: string
   senderId: string // wa_id

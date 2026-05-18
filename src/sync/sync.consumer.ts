@@ -71,8 +71,12 @@ export class SyncConsumer implements OnModuleInit {
 
   private async route(payload: Record<string, unknown>, routingKey: string): Promise<void> {
     switch (routingKey) {
+      case DATA_ROUTING_KEYS.IDENTITY_USER_CREATED:
+        return this.identity.onUserCreated(payload as never)
       case DATA_ROUTING_KEYS.IDENTITY_USER_LINKED:
         return this.identity.onUserLinked(payload as never)
+      case DATA_ROUTING_KEYS.IDENTITY_USER_DELETED:
+        return this.identity.onUserDeleted(payload as never)
 
       case DATA_ROUTING_KEYS.WHATSAPP_CONVERSATION_CREATED:
         return this.conversations.onCreated('whatsapp', payload as never)

@@ -1,11 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
-import { IdentityUserLinkedEvent } from '../events/data-events.types'
+import {
+  IdentityUserDeletedEvent,
+  IdentityUserLinkedEvent,
+} from '../events/data-events.types'
 
 /**
- * Projects `data.identity.user.linked` events into the `UnifiedUser`
- * collection. Idempotent — replay-safe because we upsert by userId and
- * dedupe the `identities[]` array on (channel, channelUserId).
+ * Projects `data.identity.*` events into the `UnifiedUser` collection.
+ *
+ * All handlers are idempotent — replay-safe — because we upsert by userId
+ * and dedupe the `identities[]` array on (channel, channelUserId).
+ *
+ * The producer (identity-service) is expected to emit AFTER it has
+ * committed to its own Postgres, so when we get here the source-of-truth
+ * already reflects the change.
  */
 @Injectable()
 export class IdentityProjector {
@@ -13,6 +21,21 @@ export class IdentityProjector {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * `data.identity.user.created` — first time we see this user record.
+   * Pre-creates the UnifiedUser so subsequent linked events don't have to
+   * race the user-creation. Treated the same as `linked` for the identity
+   * itself; the `created` is a hint, not the authoritative write.
+   */
+  async onUserCreated(event: IdentityUserLinkedEvent): Promise<void> {
+    await this.onUserLinked(event)
+  }
+
+  /**
+   * `data.identity.user.linked` — a channel identity was attached, refreshed
+   * or re-attached (post-merge). Upsert the user document and merge the
+   * identity into the `identities[]` array.
+   */
   async onUserLinked(event: IdentityUserLinkedEvent): Promise<void> {
     if (!event.userId || !event.channel || !event.channelUserId) {
       this.logger.warn(
@@ -47,7 +70,7 @@ export class IdentityProjector {
       return
     }
 
-    // Merge: replace the entry for (channel, channelUserId) if present, else append.
+    // Merge: replace (channel, channelUserId) if present, else append.
     const merged = existing.identities.filter(
       (i) => !(i.channel === event.channel && i.channelUserId === event.channelUserId),
     )
@@ -60,9 +83,44 @@ export class IdentityProjector {
         displayName: event.displayName ?? existing.displayName,
         realName: event.realName ?? existing.realName,
         avatarUrl: event.avatarUrl ?? existing.avatarUrl,
-        lastSeenAt: linkedAt > (existing.lastSeenAt ?? new Date(0)) ? linkedAt : existing.lastSeenAt,
+        lastSeenAt:
+          linkedAt > (existing.lastSeenAt ?? new Date(0)) ? linkedAt : existing.lastSeenAt,
+        // If a previously-deleted user gets a new linked event, treat it as
+        // resurrection — clear the tombstone fields.
+        deletedAt: null,
+        mergedInto: null,
       },
     })
     this.logger.debug(`Updated UnifiedUser ${event.userId} (identity ${event.channel})`)
+  }
+
+  /**
+   * `data.identity.user.deleted` — soft delete or merged-into-another tombstone.
+   * We don't physically remove the document so that historical queries (and
+   * the audit `event_log`) still work; consumers filter on `deletedAt`.
+   */
+  async onUserDeleted(event: IdentityUserDeletedEvent): Promise<void> {
+    if (!event.userId) {
+      this.logger.warn(`Skipping malformed user.deleted event (no userId)`)
+      return
+    }
+    const deletedAt = event.deletedAt ? new Date(event.deletedAt) : new Date()
+    const existing = await this.prisma.unifiedUser.findUnique({ where: { id: event.userId } })
+    if (!existing) {
+      this.logger.debug(`user.deleted for unknown UnifiedUser ${event.userId}, ignoring`)
+      return
+    }
+    await this.prisma.unifiedUser.update({
+      where: { id: event.userId },
+      data: {
+        deletedAt,
+        mergedInto: event.reason === 'merged' ? event.mergedInto ?? null : null,
+      },
+    })
+    this.logger.log(
+      `Soft-deleted UnifiedUser ${event.userId} (reason=${event.reason}` +
+        (event.mergedInto ? ` mergedInto=${event.mergedInto}` : '') +
+        `)`,
+    )
   }
 }

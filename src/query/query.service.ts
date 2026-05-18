@@ -22,13 +22,16 @@ export class QueryService {
 
   async getUser(userId: string) {
     const user = await this.prisma.unifiedUser.findUnique({ where: { id: userId } })
-    if (!user) throw new NotFoundException(`User ${userId} not found in read model`)
+    if (!user || user.deletedAt) {
+      throw new NotFoundException(`User ${userId} not found in read model`)
+    }
     return user
   }
 
   async listUsers({ limit, cursor }: ListOpts) {
     const take = clampLimit(limit)
     return this.prisma.unifiedUser.findMany({
+      where: { deletedAt: null },
       take,
       orderBy: { lastSeenAt: 'desc' },
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),

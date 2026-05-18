@@ -38,12 +38,18 @@ model UnifiedUser {
   messageCount  Int            @default(0)
   lastSeenAt    DateTime?
   firstSeenAt   DateTime?
+  /// Set when identity emits `data.identity.user.deleted` (soft delete or merged-away).
+  /// Read-side filters out non-null deletedAt unless the caller opts in.
+  deletedAt     DateTime?
+  /// If this user was merged into another, points at the surviving user.
+  mergedInto    String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
   @@map("unified_users")
   @@index([displayName])
   @@index([lastSeenAt])
+  @@index([deletedAt])
 }
 
 // Embedded (not a separate collection): identities a user has across channels.
