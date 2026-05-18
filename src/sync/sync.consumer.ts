@@ -120,9 +120,47 @@ export class SyncConsumer implements OnModuleInit {
         return this.messages.onSent('agent', payload as never)
 
       default:
-        // Unknown but well-formed `data.*` event. We still log it (caller will
-        // do that). Skipping projection is fine — projectors are additive.
-        this.logger.debug(`No projector for routingKey=${routingKey} (event logged anyway)`)
+        // Generic fall-through patterns. The explicit cases above win for
+        // the documented channels; this lets us pick up future producers
+        // (e.g. POST /v1/conversations with a new channel string) without
+        // recompiling sync.
+        return this.routeGeneric(payload, routingKey)
     }
+  }
+
+  /**
+   * Match generic data.* shapes by routing-key suffix. Channel is the
+   * second segment of the key (e.g. `data.facebook.conversation.created`
+   * → channel = 'facebook'). Falls back to logging when nothing matches.
+   */
+  private async routeGeneric(
+    payload: Record<string, unknown>,
+    routingKey: string,
+  ): Promise<void> {
+    const parts = routingKey.split('.') // ["data", "<channel>", "<entity>", "<action>"]
+    if (parts.length < 4 || parts[0] !== 'data') {
+      this.logger.debug(`Unknown routing key shape: ${routingKey}`)
+      return
+    }
+    const [, channel, entity, action] = parts
+
+    if (entity === 'conversation' && action === 'created') {
+      return this.conversations.onCreated(channel, payload as never)
+    }
+    if (entity === 'conversation' && action === 'deleted') {
+      return this.conversations.onDeleted(
+        (payload as { conversationId?: string }).conversationId ?? '',
+      )
+    }
+    if (entity === 'message' && action === 'received') {
+      return this.messages.onReceived(channel, payload as never)
+    }
+    if (entity === 'message' && action === 'sent') {
+      return this.messages.onSent(channel, payload as never)
+    }
+
+    this.logger.debug(
+      `No projector matched routingKey=${routingKey} (event logged in event_log)`,
+    )
   }
 }
