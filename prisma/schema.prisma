@@ -1,0 +1,145 @@
+// Sync Service — CQRS read model on MongoDB.
+//
+// Every collection here is a denormalized projection built from `data.*`
+// events published by other microservices. The source of truth lives in
+// each producer's own PostgreSQL — these documents are derived and can be
+// rebuilt by replaying events.
+//
+// Naming conventions:
+//   - Collection per major entity (UnifiedUser, UnifiedConversation, ...)
+//   - `_id` is a stable string (usually the producer's UUID) so upserts
+//     are idempotent and replay-safe.
+//   - Timestamps end in `At` (ISODate). Channel-scoped fields prefix the
+//     channel name (e.g. `whatsappCount`).
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("SYNC_DATABASE_URL")
+}
+
+// ─── Unified user profile ────────────────────────────────────────────────
+//
+// Sourced from `data.identity.user.linked` events. One document per logical
+// user; aggregates all the channel identities they have (WhatsApp, Instagram,
+// Slack, etc.) so the gateway can render a cross-channel profile in a single
+// query.
+model UnifiedUser {
+  id            String         @id @map("_id") // user.id from identity service
+  displayName   String?
+  realName      String?
+  avatarUrl     String?
+  identities    UserChannelId[]
+  conversationCount Int        @default(0)
+  messageCount  Int            @default(0)
+  lastSeenAt    DateTime?
+  firstSeenAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("unified_users")
+  @@index([displayName])
+  @@index([lastSeenAt])
+}
+
+// Embedded (not a separate collection): identities a user has across channels.
+type UserChannelId {
+  channel       String   // "whatsapp" | "instagram" | "slack" | ...
+  channelUserId String   // wa_id, IGSID, slack U-id, ...
+  displayName   String?
+  linkedAt      DateTime
+}
+
+// ─── Unified conversation (across all channels) ──────────────────────────
+//
+// Sourced from `data.<channel>.conversation.created` events. Conversations
+// from any channel land here in a single shape so a frontend can show "all
+// conversations of user X" without joining 5 different databases.
+model UnifiedConversation {
+  id            String   @id @map("_id") // conversation.id from producer
+  userId        String?
+  channel       String   // "whatsapp" | "instagram" | ...
+  channelUserId String
+  topic         String?
+  status        String   @default("ACTIVE") // ACTIVE | WITH_AGENT | ARCHIVED | CLOSED
+  aiEnabled     Boolean  @default(true)
+  agentAssigned String?
+  messageCount  Int      @default(0)
+  aiMessageCount Int     @default(0)
+  lastMessageAt DateTime?
+  firstMessageAt DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("unified_conversations")
+  @@index([userId])
+  @@index([channelUserId, channel])
+  @@index([status, lastMessageAt])
+}
+
+// ─── Unified message ─────────────────────────────────────────────────────
+//
+// Sourced from `data.<channel>.message.received` (USER → BOT) and any future
+// `data.<channel>.message.sent` (BOT → USER) events. Append-only.
+model UnifiedMessage {
+  id              String   @id @map("_id") // external messageId (wamid / IG mid / ...)
+  conversationId  String?
+  userId          String?
+  channel         String
+  channelUserId   String
+  sender          String   // "USER" | "BOT" | "AGENT" | "SYSTEM"
+  content         String
+  mediaUrl        String?
+  externalId      String?  // back-pointer to provider id when different from `id`
+  metadata        Json?
+  occurredAt      DateTime
+  createdAt       DateTime @default(now())
+
+  @@map("unified_messages")
+  @@index([conversationId, occurredAt])
+  @@index([userId, occurredAt])
+  @@index([channel, channelUserId, occurredAt])
+}
+
+// ─── Scraping task summary ───────────────────────────────────────────────
+//
+// Sourced from `data.scraping.task.completed`. Quick lookup of recent
+// scraping jobs per user without hitting the scrapping service.
+model ScrapingTaskSummary {
+  id            String   @id @map("_id") // taskId
+  userId        String?
+  url           String
+  title         String?
+  status        String   // "completed" | "failed"
+  notionPageUrl String?
+  durationMs    Int?
+  error         String?
+  occurredAt    DateTime
+  createdAt     DateTime @default(now())
+
+  @@map("scraping_task_summaries")
+  @@index([userId, occurredAt])
+  @@index([status])
+}
+
+// ─── Raw event log (audit / replay) ──────────────────────────────────────
+//
+// Every `data.*` event we consume is also logged here verbatim so we can
+// replay or debug. Keep it append-only; pruning is handled by a separate
+// retention job (not implemented yet).
+model EventLog {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  routingKey  String
+  payload     Json
+  consumedAt  DateTime @default(now())
+  status      String   @default("OK") // "OK" | "ERROR"
+  errorReason String?
+
+  @@map("event_log")
+  @@index([routingKey, consumedAt])
+  @@index([status, consumedAt])
+}
