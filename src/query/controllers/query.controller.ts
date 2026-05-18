@@ -30,10 +30,15 @@ export class QueryController {
   @Get('users/:userId/conversations')
   getUserConversations(
     @Param('userId') userId: string,
+    @Query('channel') channel?: string,
     @Query('limit') limit?: string,
     @Query('cursor') cursor?: string,
   ) {
-    return this.q.getUserConversations(userId, { limit: parseLimit(limit), cursor })
+    return this.q.getUserConversations(
+      userId,
+      { channel },
+      { limit: parseLimit(limit), cursor },
+    )
   }
 
   @Get('users/:userId/scraping-tasks')
@@ -58,8 +63,12 @@ export class QueryController {
   // ── Conversations ────────────────────────────────────────────────────
 
   @Get('conversations')
-  listConversations(@Query('limit') limit?: string, @Query('cursor') cursor?: string) {
-    return this.q.listConversations({ limit: parseLimit(limit), cursor })
+  listConversations(
+    @Query('channel') channel?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.q.listConversations({ channel }, { limit: parseLimit(limit), cursor })
   }
 
   @Get('conversations/:id')
@@ -74,6 +83,22 @@ export class QueryController {
     @Query('cursor') cursor?: string,
   ) {
     return this.q.getConversationMessages(id, { limit: parseLimit(limit), cursor })
+  }
+
+  // ── Scraping tasks ───────────────────────────────────────────────────
+
+  @Get('scraping-tasks')
+  listScrapingTasks(
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.q.listScrapingTasks({ status }, { limit: parseLimit(limit), cursor })
+  }
+
+  @Get('scraping-tasks/:id')
+  getScrapingTask(@Param('id') id: string) {
+    return this.q.getScrapingTask(id)
   }
 
   // ── Emails ───────────────────────────────────────────────────────────

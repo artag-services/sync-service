@@ -40,10 +40,18 @@ export class QueryService {
 
   // ─── Conversations ───────────────────────────────────────────────────
 
-  async getUserConversations(userId: string, { limit, cursor }: ListOpts) {
+  async getUserConversations(
+    userId: string,
+    filters: { channel?: string },
+    { limit, cursor }: ListOpts,
+  ) {
     const take = clampLimit(limit)
     return this.prisma.unifiedConversation.findMany({
-      where: { userId, status: { not: 'DELETED' } },
+      where: {
+        userId,
+        status: { not: 'DELETED' },
+        channel: filters.channel ?? undefined,
+      },
       take,
       orderBy: { lastMessageAt: 'desc' },
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -60,10 +68,16 @@ export class QueryService {
     return conv
   }
 
-  async listConversations({ limit, cursor }: ListOpts) {
+  async listConversations(
+    filters: { channel?: string },
+    { limit, cursor }: ListOpts,
+  ) {
     const take = clampLimit(limit)
     return this.prisma.unifiedConversation.findMany({
-      where: { status: { not: 'DELETED' } },
+      where: {
+        status: { not: 'DELETED' },
+        channel: filters.channel ?? undefined,
+      },
       take,
       orderBy: { lastMessageAt: 'desc' },
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -92,6 +106,25 @@ export class QueryService {
       orderBy: { occurredAt: 'desc' },
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
     })
+  }
+
+  async listScrapingTasks(
+    filters: { status?: string },
+    { limit, cursor }: ListOpts,
+  ) {
+    const take = clampLimit(limit)
+    return this.prisma.scrapingTaskSummary.findMany({
+      where: { status: filters.status ?? undefined },
+      take,
+      orderBy: { occurredAt: 'desc' },
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+    })
+  }
+
+  async getScrapingTask(taskId: string) {
+    const task = await this.prisma.scrapingTaskSummary.findUnique({ where: { id: taskId } })
+    if (!task) throw new NotFoundException(`Scraping task ${taskId} not found`)
+    return task
   }
 
   // ─── Emails ──────────────────────────────────────────────────────────
@@ -146,28 +179,55 @@ export class QueryService {
   // ─── Search ──────────────────────────────────────────────────────────
 
   /**
-   * Naive cross-channel search: substring-matches `q` against message content
-   * and conversation topic. NOT using Mongo full-text indexes yet — keep it
-   * simple until we know what queries matter.
+   * Cross-collection search. Case-insensitive substring against:
+   *   - unified_messages.content
+   *   - unified_conversations.topic
+   *   - unified_emails: subject + textBody + fromAddress
+   *
+   * Backed by regex queries in parallel. NOT using Mongo's $text index
+   * yet — at low volumes the regex scan is fine. When collections grow
+   * past ~100k docs, create text indexes manually:
+   *
+   *   db.unified_messages.createIndex({ content: "text" })
+   *   db.unified_emails.createIndex({ subject: "text", textBody: "text" })
+   *
+   * …and switch this method to `$text` via raw aggregation. Prisma's
+   * MongoDB provider doesn't model $text in the schema, so it has to be
+   * a post-deploy step.
    */
   async search(q: string, { limit }: ListOpts) {
     const take = clampLimit(limit)
-    if (!q || q.trim().length < 2) return { messages: [], conversations: [] }
+    const empty = { messages: [], conversations: [], emails: [] }
+    if (!q || q.trim().length < 2) return empty
 
-    const [messages, conversations] = await Promise.all([
+    const [messages, conversations, emails] = await Promise.all([
       this.prisma.unifiedMessage.findMany({
         where: { content: { contains: q, mode: 'insensitive' } },
         take,
         orderBy: { occurredAt: 'desc' },
       }),
       this.prisma.unifiedConversation.findMany({
-        where: { topic: { contains: q, mode: 'insensitive' } },
+        where: {
+          topic: { contains: q, mode: 'insensitive' },
+          status: { not: 'DELETED' },
+        },
         take,
         orderBy: { lastMessageAt: 'desc' },
       }),
+      this.prisma.unifiedEmail.findMany({
+        where: {
+          OR: [
+            { subject: { contains: q, mode: 'insensitive' } },
+            { textBody: { contains: q, mode: 'insensitive' } },
+            { fromAddress: { contains: q, mode: 'insensitive' } },
+          ],
+        },
+        take,
+        orderBy: { occurredAt: 'desc' },
+      }),
     ])
 
-    return { messages, conversations }
+    return { messages, conversations, emails }
   }
 }
 
