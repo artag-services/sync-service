@@ -43,7 +43,7 @@ export class QueryService {
   async getUserConversations(userId: string, { limit, cursor }: ListOpts) {
     const take = clampLimit(limit)
     return this.prisma.unifiedConversation.findMany({
-      where: { userId },
+      where: { userId, status: { not: 'DELETED' } },
       take,
       orderBy: { lastMessageAt: 'desc' },
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -54,13 +54,16 @@ export class QueryService {
     const conv = await this.prisma.unifiedConversation.findUnique({
       where: { id: conversationId },
     })
-    if (!conv) throw new NotFoundException(`Conversation ${conversationId} not found`)
+    if (!conv || conv.status === 'DELETED') {
+      throw new NotFoundException(`Conversation ${conversationId} not found`)
+    }
     return conv
   }
 
   async listConversations({ limit, cursor }: ListOpts) {
     const take = clampLimit(limit)
     return this.prisma.unifiedConversation.findMany({
+      where: { status: { not: 'DELETED' } },
       take,
       orderBy: { lastMessageAt: 'desc' },
       ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),

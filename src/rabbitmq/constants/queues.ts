@@ -36,6 +36,11 @@ export const DATA_ROUTING_KEYS = {
   SCRAPING_TASK_FAILED: 'data.scraping.task.failed',
   EMAIL_MESSAGE_SENT: 'data.email.message.sent',
   EMAIL_MESSAGE_RECEIVED: 'data.email.message.received',
+  SLACK_MESSAGE_SENT: 'data.slack.message.sent',
+  AGENT_CONVERSATION_CREATED: 'data.agent.conversation.created',
+  AGENT_CONVERSATION_DELETED: 'data.agent.conversation.deleted',
+  AGENT_MESSAGE_RECEIVED: 'data.agent.message.received',
+  AGENT_MESSAGE_SENT: 'data.agent.message.sent',
 } as const
 
 export type DataRoutingKey = (typeof DATA_ROUTING_KEYS)[keyof typeof DATA_ROUTING_KEYS]

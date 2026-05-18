@@ -8,6 +8,24 @@ import {
 type MessageReceived = WhatsappMessageReceivedEvent | InstagramMessageReceivedEvent
 
 /**
+ * Shape used by outbound channels (slack send, future agent reply). Same
+ * underlying UnifiedMessage row, but sender='BOT' and conversationId
+ * may be null because some channels (slack) don't model conversations
+ * server-side.
+ */
+interface MessageSent {
+  messageId: string
+  externalMessageId?: string | null
+  recipient: string
+  channelUserId?: string | null
+  conversationId?: string | null
+  userId?: string | null
+  content: string
+  mediaUrl?: string | null
+  timestamp?: string
+}
+
+/**
  * Projects `data.<channel>.message.received` events into UnifiedMessage AND
  * updates the parent UnifiedConversation counters in the same logical unit.
  *
@@ -74,5 +92,69 @@ export class MessageProjector {
           (err instanceof Error ? err.message : String(err)),
       )
     })
+  }
+
+  /**
+   * Outbound counterpart to `onReceived`. Same UnifiedMessage row shape but
+   * `sender='BOT'`. Used by:
+   *   - slack-service after a chat.postMessage commits
+   *   - agent-service after an assistant reply is persisted
+   *
+   * Conversation counters only bump if a conversationId is supplied AND we
+   * created a new row (replays are no-ops). Slack messages have no
+   * conversation, so they just land as orphan UnifiedMessages — still
+   * queryable by channel + channelUserId + occurredAt.
+   */
+  async onSent(channel: string, event: MessageSent): Promise<void> {
+    if (!event.messageId || !event.recipient) {
+      this.logger.warn(
+        `Skipping malformed message.sent event (${channel}): ${JSON.stringify(event).slice(0, 200)}`,
+      )
+      return
+    }
+
+    const occurredAt = event.timestamp ? new Date(event.timestamp) : new Date()
+
+    let isNew = false
+    try {
+      await this.prisma.unifiedMessage.create({
+        data: {
+          id: event.messageId,
+          conversationId: event.conversationId ?? null,
+          userId: event.userId ?? null,
+          channel,
+          channelUserId: event.channelUserId ?? event.recipient,
+          sender: 'BOT',
+          content: event.content ?? '',
+          mediaUrl: event.mediaUrl ?? null,
+          externalId: event.externalMessageId ?? event.messageId,
+          occurredAt,
+        },
+      })
+      isNew = true
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!/duplicate key|E11000|P2002/i.test(msg)) {
+        throw err
+      }
+      this.logger.debug(`Replay of UnifiedMessage ${event.messageId}, skipping counter bump`)
+    }
+
+    if (!isNew || !event.conversationId) return
+
+    await this.prisma.unifiedConversation
+      .update({
+        where: { id: event.conversationId },
+        data: {
+          messageCount: { increment: 1 },
+          lastMessageAt: occurredAt,
+        },
+      })
+      .catch((err) => {
+        this.logger.warn(
+          `UnifiedConversation ${event.conversationId} not found while bumping counters: ` +
+            (err instanceof Error ? err.message : String(err)),
+        )
+      })
   }
 }

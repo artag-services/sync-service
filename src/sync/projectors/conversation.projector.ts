@@ -55,4 +55,25 @@ export class ConversationProjector {
 
     this.logger.debug(`UnifiedConversation upsert ${event.conversationId} (${channel})`)
   }
+
+  /**
+   * Soft-delete: mark the conversation tombstoned so it disappears from
+   * default queries. We keep the doc for audit; the QueryService filters
+   * `status: 'DELETED'` out.
+   */
+  async onDeleted(conversationId: string): Promise<void> {
+    if (!conversationId) return
+    const existing = await this.prisma.unifiedConversation.findUnique({
+      where: { id: conversationId },
+    })
+    if (!existing) {
+      this.logger.debug(`conversation.deleted for unknown ${conversationId}, ignoring`)
+      return
+    }
+    await this.prisma.unifiedConversation.update({
+      where: { id: conversationId },
+      data: { status: 'DELETED' },
+    })
+    this.logger.log(`Soft-deleted UnifiedConversation ${conversationId}`)
+  }
 }

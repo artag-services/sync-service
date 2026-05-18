@@ -101,6 +101,24 @@ export class SyncConsumer implements OnModuleInit {
       case DATA_ROUTING_KEYS.EMAIL_MESSAGE_RECEIVED:
         return this.emails.onReceived(payload as never)
 
+      case DATA_ROUTING_KEYS.SLACK_MESSAGE_SENT:
+        // Slack outbound — sender='BOT'. No conversation server-side.
+        return this.messages.onSent('slack', payload as never)
+
+      case DATA_ROUTING_KEYS.AGENT_CONVERSATION_CREATED:
+        return this.conversations.onCreated('agent', payload as never)
+      case DATA_ROUTING_KEYS.AGENT_CONVERSATION_DELETED:
+        return this.conversations.onDeleted(
+          (payload as { conversationId?: string }).conversationId ?? '',
+        )
+      case DATA_ROUTING_KEYS.AGENT_MESSAGE_RECEIVED:
+        // User prompt to the agent — sender='USER'.
+        return this.messages.onReceived('agent', payload as never)
+      case DATA_ROUTING_KEYS.AGENT_MESSAGE_SENT:
+        // Assistant final reply — sender='BOT'. Intermediate tool-loop
+        // rounds are NOT emitted by the producer.
+        return this.messages.onSent('agent', payload as never)
+
       default:
         // Unknown but well-formed `data.*` event. We still log it (caller will
         // do that). Skipping projection is fine — projectors are additive.
