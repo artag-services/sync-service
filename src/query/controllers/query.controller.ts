@@ -45,6 +45,16 @@ export class QueryController {
     return this.q.getUserScrapingTasks(userId, { limit: parseLimit(limit), cursor })
   }
 
+  @Get('users/:userId/emails')
+  getUserEmails(
+    @Param('userId') userId: string,
+    @Query('direction') direction?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.q.getUserEmails(userId, { direction }, { limit: parseLimit(limit), cursor })
+  }
+
   // ── Conversations ────────────────────────────────────────────────────
 
   @Get('conversations')
@@ -64,6 +74,27 @@ export class QueryController {
     @Query('cursor') cursor?: string,
   ) {
     return this.q.getConversationMessages(id, { limit: parseLimit(limit), cursor })
+  }
+
+  // ── Emails ───────────────────────────────────────────────────────────
+
+  @Get('emails')
+  listEmails(
+    @Query('direction') direction?: string,
+    @Query('domain') domain?: string,
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.q.listEmails(
+      { direction, domain, status },
+      { limit: parseLimit(limit), cursor },
+    )
+  }
+
+  @Get('emails/:id')
+  getEmail(@Param('id') id: string) {
+    return this.q.getEmail(id)
   }
 
   // ── Search ───────────────────────────────────────────────────────────

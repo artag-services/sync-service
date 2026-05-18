@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service'
 import { RabbitMQService } from '../rabbitmq/rabbitmq.service'
 import { DATA_ROUTING_KEYS, SYNC_BINDINGS } from '../rabbitmq/constants/queues'
 import { ConversationProjector } from './projectors/conversation.projector'
+import { EmailProjector } from './projectors/email.projector'
 import { IdentityProjector } from './projectors/identity.projector'
 import { MessageProjector } from './projectors/message.projector'
 import { ScrapingProjector } from './projectors/scraping.projector'
@@ -29,6 +30,7 @@ export class SyncConsumer implements OnModuleInit {
     private readonly conversations: ConversationProjector,
     private readonly messages: MessageProjector,
     private readonly scraping: ScrapingProjector,
+    private readonly emails: EmailProjector,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -93,6 +95,11 @@ export class SyncConsumer implements OnModuleInit {
         // Same projector handles both — `status` inside the payload
         // distinguishes `completed` vs `failed`.
         return this.scraping.onCompleted(payload as never)
+
+      case DATA_ROUTING_KEYS.EMAIL_MESSAGE_SENT:
+        return this.emails.onSent(payload as never)
+      case DATA_ROUTING_KEYS.EMAIL_MESSAGE_RECEIVED:
+        return this.emails.onReceived(payload as never)
 
       default:
         // Unknown but well-formed `data.*` event. We still log it (caller will

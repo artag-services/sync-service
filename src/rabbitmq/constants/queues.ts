@@ -34,6 +34,8 @@ export const DATA_ROUTING_KEYS = {
   INSTAGRAM_CONVERSATION_CREATED: 'data.instagram.conversation.created',
   SCRAPING_TASK_COMPLETED: 'data.scraping.task.completed',
   SCRAPING_TASK_FAILED: 'data.scraping.task.failed',
+  EMAIL_MESSAGE_SENT: 'data.email.message.sent',
+  EMAIL_MESSAGE_RECEIVED: 'data.email.message.received',
 } as const
 
 export type DataRoutingKey = (typeof DATA_ROUTING_KEYS)[keyof typeof DATA_ROUTING_KEYS]

@@ -92,3 +92,59 @@ export interface ScrapingTaskCompletedEvent {
   error?: string | null
   timestamp?: string
 }
+
+/**
+ * Outbound email events. `data.email.message.sent` is emitted on initial
+ * send AND on every subsequent status change (delivered, bounced, opened,
+ * clicked, complained, failed). The projector upserts by `emailId` so
+ * re-emission is safe; only fields present in the latest event overwrite.
+ */
+export interface EmailMessageSentEvent {
+  emailId: string
+  userId?: string | null
+  domain?: string | null
+  fromAddress: string
+  toAddresses: string[]
+  replyTo?: string | null
+  subject?: string | null
+  textBody?: string | null
+  htmlBody?: string | null
+  provider?: string | null
+  providerMessageId?: string | null
+  status?:
+    | 'QUEUED'
+    | 'SENT'
+    | 'DELIVERED'
+    | 'BOUNCED'
+    | 'COMPLAINED'
+    | 'FAILED'
+    | 'OPENED'
+    | 'CLICKED'
+    | string
+  sentAt?: string | null
+  deliveredAt?: string | null
+  bouncedAt?: string | null
+  complainedAt?: string | null
+  openedAt?: string | null
+  clickedAt?: string | null
+  errorReason?: string | null
+  metadata?: Record<string, unknown>
+  timestamp?: string
+}
+
+/** Inbound email snapshot at receipt time. */
+export interface EmailMessageReceivedEvent {
+  emailId: string
+  domain: string
+  toAddress: string
+  toAlias?: string | null
+  fromAddress: string
+  fromName?: string | null
+  subject?: string | null
+  textBody?: string | null
+  htmlBody?: string | null
+  attachments?: Array<{ name?: string; contentType?: string; size?: number }>
+  userId?: string | null
+  receivedAt?: string
+  metadata?: Record<string, unknown>
+}

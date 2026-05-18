@@ -111,6 +111,64 @@ model UnifiedMessage {
   @@index([channel, channelUserId, occurredAt])
 }
 
+// ─── Unified email (inbound + outbound, all domains) ────────────────────
+//
+// Sourced from `data.email.message.sent` (outbound) and
+// `data.email.message.received` (inbound). One document per email; the
+// `direction` field disambiguates. Status lifecycle for outbound mirrors
+// the producer (QUEUED → SENT → DELIVERED / BOUNCED / OPENED / CLICKED).
+//
+// Inbound emails are stored as a snapshot at receipt time; we don't track
+// their lifecycle (there's nothing to track once they're in the inbox).
+model UnifiedEmail {
+  id              String   @id @map("_id") // producer's emailMessage.id / inboundEmail.id
+  direction       String   // "outbound" | "inbound"
+
+  // Routing
+  domain          String?
+  fromAddress     String
+  toAddresses     String[] @default([])
+  toAlias         String?  // inbound only: local part of `to`
+  fromName        String?  // inbound only: display name
+  replyTo         String?
+
+  // Content (snapshot — full body lives in producer's Postgres)
+  subject         String?
+  textBody        String?
+  htmlBody        String?
+
+  // Outbound-specific
+  provider        String?  // "resend" | "smtp"
+  providerMessageId String?
+  status          String?  // EmailStatus from producer
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  bouncedAt       DateTime?
+  complainedAt    DateTime?
+  openedAt        DateTime?
+  clickedAt       DateTime?
+  errorReason     String?
+
+  // Identity link — backfilled when identity service resolves
+  userId          String?
+
+  // Misc
+  attachments     Json?    // [{ name, contentType, size }]
+  metadata        Json?
+
+  occurredAt      DateTime // sentAt for outbound, receivedAt for inbound
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("unified_emails")
+  @@index([userId, occurredAt])
+  @@index([direction, occurredAt])
+  @@index([domain, occurredAt])
+  @@index([fromAddress])
+  @@index([toAddresses])
+  @@index([status])
+}
+
 // ─── Scraping task summary ───────────────────────────────────────────────
 //
 // Sourced from `data.scraping.task.completed`. Quick lookup of recent

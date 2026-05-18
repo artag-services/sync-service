@@ -91,6 +91,55 @@ export class QueryService {
     })
   }
 
+  // ─── Emails ──────────────────────────────────────────────────────────
+
+  async getEmail(emailId: string) {
+    const email = await this.prisma.unifiedEmail.findUnique({ where: { id: emailId } })
+    if (!email) throw new NotFoundException(`Email ${emailId} not found in read model`)
+    return email
+  }
+
+  /**
+   * List emails with optional filters.
+   *   - direction: 'inbound' | 'outbound' (omit for both)
+   *   - domain: filter by receiving/sending domain
+   *   - status: outbound lifecycle (SENT/DELIVERED/BOUNCED/OPENED/CLICKED/...)
+   */
+  async listEmails(
+    filters: { direction?: string; domain?: string; status?: string },
+    { limit, cursor }: ListOpts,
+  ) {
+    const take = clampLimit(limit)
+    return this.prisma.unifiedEmail.findMany({
+      where: {
+        direction: filters.direction ?? undefined,
+        domain: filters.domain ?? undefined,
+        status: filters.status ?? undefined,
+      },
+      take,
+      orderBy: { occurredAt: 'desc' },
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+    })
+  }
+
+  /** Emails associated with a user (either direction). */
+  async getUserEmails(
+    userId: string,
+    filters: { direction?: string },
+    { limit, cursor }: ListOpts,
+  ) {
+    const take = clampLimit(limit)
+    return this.prisma.unifiedEmail.findMany({
+      where: {
+        userId,
+        direction: filters.direction ?? undefined,
+      },
+      take,
+      orderBy: { occurredAt: 'desc' },
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+    })
+  }
+
   // ─── Search ──────────────────────────────────────────────────────────
 
   /**
